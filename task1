@@ -1,0 +1,205 @@
+#問題１
+
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.optimize import minimize_scalar
+import matplotlib
+
+# Use a default sans-serif font that supports English characters
+plt.rcParams['font.family'] = 'sans-serif'
+matplotlib.rcParams['axes.unicode_minus'] = False
+
+# ----- パラメータ -----
+gamma = 2.0
+beta  = 0.985**20
+r     = 1.025**20 - 1.0
+
+# 所得（低・中・高）
+y_types = [0.8027, 1.0, 1.2457]
+labels  = ['Low Productivity', 'Medium Productivity', 'High Productivity'] # Translate labels to English
+
+# 資産グリッド
+a0_grid = np.linspace(0, 6, 100)
+
+# 効用
+def util(c):
+    c_safe = np.maximum(c, 1e-8)
+    return c_safe**(1-gamma)/(1-gamma)
+
+# 最適 a1
+a1_policy = np.zeros((3, len(a0_grid)))
+
+for i, y in enumerate(y_types):
+    for j, a0 in enumerate(a0_grid):
+        def obj(a1):
+            c1 = y + (1+r)*a0 - a1
+            c2 = y + (1+r)*a1
+            return -(util(c1) + beta*util(c2))
+        res = minimize_scalar(obj, bounds=(0, y+(1+r)*a0), method='bounded')
+        a1_policy[i, j] = res.x
+
+# ---------- グラフ ----------
+plt.figure(figsize=(8,5))
+for i in range(3):
+    plt.plot(a0_grid, a1_policy[i], label=labels[i])
+plt.title('Saving Policy Function (No Pension)') # Translate title to English
+plt.xlabel('Asset $a_0$ in Youth') # Translate xlabel to English
+plt.ylabel('Asset $a_1$ in Middle Age') # Translate ylabel to English
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+#問題２
+import numpy as np
+
+# ---------- パラメータ ----------
+tax_rate = 0.30
+r = 1.025**20 - 1          # 20年複利の実質利子率
+l = np.array([0.8027, 1.0, 1.2457])   # 労働所得（低・中・高）
+P = np.array([[0.7451, 0.2528, 0.0021],
+              [0.1360, 0.7281, 0.1360],
+              [0.0021, 0.2528, 0.7451]])
+
+# ---------- 若年期分布（1/3ずつ）----------
+mu_youth = np.array([1/3, 1/3, 1/3])
+
+# ---------- 中年期分布 = 若年期分布 × 遷移確率 ----------
+mu_middle = mu_youth @ P       # shape (3,)
+
+# ---------- 中年期の期待所得 ----------
+E_income_middle = np.dot(mu_middle, l)
+print(f"Expected middle‑age income = {E_income_middle:.4f}")
+
+# ---------- 総税収（人口 1 と規定）----------
+tax_revenue = tax_rate * E_income_middle
+print(f"Government tax revenue  = {tax_revenue:.4f}")
+
+# ---------- 運用後の基金 ----------
+fund_after_invest = tax_revenue * (1 + r)
+print(f"Fund after investment   = {fund_after_invest:.4f}")
+
+# ---------- 一人あたり年金給付 ----------
+pension = fund_after_invest          # 人口を 1 と置いたのでそのまま
+print(f"\nUniform pension per person = {pension:.4f}")
+
+#問題３
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.optimize import minimize_scalar
+import matplotlib
+matplotlib.rcParams['font.family'] = 'AppleGothic'   # ← mac の場合
+matplotlib.rcParams['axes.unicode_minus'] = False
+
+# ---------- 共通パラメータ ----------
+gamma = 2.0
+beta  = 0.985**20
+r     = 1.025**20 - 1
+tax   = 0.30
+pension = 0.4986          # ← 課題2の結果を固定値で使用
+
+y_types = [0.8027, 1.0, 1.2457]
+labels  = ['Low', 'Medium', 'High']
+a0_grid = np.linspace(0, 6, 100)
+
+def util(c):
+    return np.maximum(c, 1e-8)**(1-gamma)/(1-gamma)
+
+# ---------- 年金なし ----------
+a1_no = np.zeros((3, len(a0_grid)))
+for i, y in enumerate(y_types):
+    for j, a0 in enumerate(a0_grid):
+        obj = lambda a1: -( util(y + (1+r)*a0  - a1) +
+                            beta*util(y + (1+r)*a1) )
+        res = minimize_scalar(obj, bounds=(0, y+(1+r)*a0), method='bounded')
+        a1_no[i, j] = res.x
+
+# ---------- 年金あり（税30%・定額年金） ----------
+a1_pension = np.zeros_like(a1_no)
+for i, y in enumerate(y_types):
+    for j, a0 in enumerate(a0_grid):
+        obj = lambda a1: -( util(y + (1+r)*a0 - a1) +              # c1 変わらず
+                            beta*util((1-tax)*y + (1+r)*a1 + pension) )  # c2 に税と年金
+        res = minimize_scalar(obj, bounds=(0, y+(1+r)*a0), method='bounded')
+        a1_pension[i, j] = res.x
+
+# ---------- 描画 ----------
+fig, ax = plt.subplots(figsize=(8,5))
+for i in range(3):
+    ax.plot(a0_grid, a1_no[i],       ls='--', label=f'{labels[i]} (No pension)')
+    ax.plot(a0_grid, a1_pension[i],  ls='-',  label=f'{labels[i]} (With pension)')
+ax.set_title('Saving Policy Function: No pension vs. Pension system')
+ax.set_xlabel('Asset $a_0$ in Youth')
+ax.set_ylabel('Asset $a_1$ in Middle Age')
+ax.grid(True)
+ax.legend()
+plt.tight_layout()
+plt.show()
+
+#問題４
+import numpy as np
+from scipy.optimize import minimize_scalar
+
+# ---------- パラメータ ----------
+gamma = 2.0
+beta  = 0.985**20
+r     = 1.025**20 - 1
+tax   = 0.30
+pension = 0.4986                       # 課題2より
+l = np.array([0.8027, 1.0, 1.2457])    # 所得レベル
+P = np.array([[0.7451, 0.2528, 0.0021],
+              [0.1360, 0.7281, 0.1360],
+              [0.0021, 0.2528, 0.7451]])
+
+mu = np.array([1/3, 1/3, 1/3])         # 若年期タイプ分布
+
+def util(c):                           # CRRA γ=2
+    return np.maximum(c,1e-8)**(1-gamma)/(1-gamma)
+
+# ---------- ヘルパー：中年期 V(a1, y_j, pension?) を最大化して返す ----------
+def middle_value(a1, y_j, pension_on):
+    """与えられた a1 と中年期所得 y_j で a2 を最適化し，V2 を返す"""
+    if pension_on:
+        y_mid = (1-tax)*y_j            # 中年期は課税後所得
+    else:
+        y_mid = y_j                    # 課税なし
+    def inner(a2):
+        c2 = y_mid + (1+r)*a1 - a2
+        if pension_on:
+            c3 = pension + (1+r)*a2
+        else:
+            c3 = (1+r)*a2
+        return -( util(c2) + beta*util(c3) )
+    res = minimize_scalar(inner, bounds=(0, y_mid+(1+r)*a1), method='bounded')
+    return -res.fun                    # 最大値
+
+# ---------- 若年期 a1 を最適化し，生涯効用を返す ----------
+def lifetime_value(y_i, rowP, pension_on):
+    def obj(a1):
+        c1 = y_i + (1+r)*0 - a1        # a0=0
+        EV_mid = 0.0
+        for j, y_j in enumerate(l):
+            EV_mid += rowP[j] * middle_value(a1, y_j, pension_on)
+        return -( util(c1) + beta*EV_mid )
+    res = minimize_scalar(obj, bounds=(0, y_i+(1+r)*0), method='bounded')
+    return -res.fun                    # 最大化値
+
+# ---------- タイプ別・制度別の生涯効用 ----------
+U_no     = np.zeros(3)
+U_pension= np.zeros(3)
+for i, y_i in enumerate(l):
+    U_no[i]      = lifetime_value(y_i, P[i], pension_on=False)
+    U_pension[i] = lifetime_value(y_i, P[i], pension_on=True)
+
+# ---------- 経済全体（人口加重平均）----------
+U_avg_no      = np.dot(mu, U_no)
+U_avg_pension = np.dot(mu, U_pension)
+
+print("Lifetime utility by type")
+for i, lab in enumerate(['Low','Mid','High']):
+    print(f"{lab:>4s}:  No={U_no[i]:.4f}   Pension={U_pension[i]:.4f}")
+
+print("\nPopulation‑weighted average utility")
+print(f"  No pension : {U_avg_no:.4f}")
+print(f"  Pension    : {U_avg_pension:.4f}")
+print(f"  Difference : {U_avg_pension-U_avg_no:+.4f}")
